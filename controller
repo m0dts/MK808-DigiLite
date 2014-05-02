@@ -1,5 +1,0 @@
-#!/bin/bash
-cd binaries
-cp backup/listen_controller listen
-
-echo -e "\nNow configured for use with the Controller, you can now reboot\n"
