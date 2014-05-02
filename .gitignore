@@ -1,0 +1,18 @@
+## mcs ##
+*.dep
+*.as
+*.mcs
+*.mcw
+funclist
+*.p1
+*.pre
+*.cof
+*.hxl
+*.lst
+*.map
+*.obj
+*.rlf
+*.sym
+*.sdb
+*.tmp
+
