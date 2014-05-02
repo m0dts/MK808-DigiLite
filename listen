@@ -1,0 +1,100 @@
+#!/bin/bash
+# Script to control MK808 from serial port2 on FT2232 USB interface used on the DigiLite.
+# Accepts a string of variables for input and generates the encoder settings.
+# by M0DTS 
+
+cd /root/binaries; # Change path to binaries directory
+
+#stty -F /dev/ttyUSB0 -opost
+stty -F /dev/ttyUSB1 9600 raw
+
+echo -e "\nRunning with Controller, Waiting control command..."
+
+
+while true
+do
+	read -n 80 string < /dev/ttyUSB1
+	echo $string
+
+	if echo  $string | egrep -q "start";
+	then
+		echo "started." > /dev/ttyUSB1
+		sleep 1
+	fi
+
+	if echo  $string | egrep -q "stop";
+	then
+		echo "Stopped." > /dev/ttyUSB1
+  		killall dvbsenco8 > /dev/null 2>&1
+		killall hcapture > /dev/null 2>&1
+		killall pstots > /dev/null 2>&1
+		killall dvbsiadd > /dev/null 2>&1
+		killall dvbnullpadder > /dev/null 2>&1
+		echo -e "SD Card mode, waiting to satrt up encoder..."
+		sleep 1
+	fi
+
+	if echo  $string | egrep -q "##";
+	then
+		SR=${string:2:4}
+		FEC=${string:7:3}
+		VPID=${string:11:4}
+		APID=${string:16:4}
+		PMTPID=${string:21:4}
+		INPUT=${string:26:1}
+		CALLSIGN=${string:28:10}
+		TITLE=${string:39:15}
+		TEXT=${string:55:15}
+		echo -e "SR="$SR "FEC="$FEC "VPID="$VPID "APID="$APID "PMTPID="$PMTPID "CALLSIGN="$CALLSIGN "INPUT="$INPUT
+
+		#Calculate Video bit rate value for current SR/FEC
+		DSR=$(echo "scale=0;2*$SR" | bc) # 2 * Symbol Rate
+		DECFEC=$(echo "scale=3;$FEC" | bc) # Turns FEC String to decimal
+		RS=$(echo "scale=3;188 / 204" | bc) # Calculates Reed Solomon percentage
+		TS=$(echo "scale=0;$DSR * $RS * $DECFEC" | bc) # Calculates Transport Stream rate for current SR/FEC
+		echo "Transport Stream rate for current SR/FEC is:" $TS
+		TSMAUD=$(echo "scale=0;$TS - 192" | bc) # TS Rate minus Audio rate
+		VIDRATE=$(echo "scale=0;$TSMAUD * 0.75" | bc) # TS - Audio rate * 0.85 gives rough available Video Bitrate
+		echo "Video bit-rate:" ${VIDRATE%.*}
+		echo -e "\n"
+
+
+		#Create config.txt - Encoder/PID Settings
+		echo "videobitrate" ${VIDRATE%.*}"000" > config.txt
+		echo "videocapture /dev/video0" >> config.txt
+		echo "captureport " $INPUT >> config.txt
+		echo "videopid" $VPID >> config.txt
+		echo "audiopid" $APID >> config.txt
+		echo "pmtpid" $PMTPID >> config.txt
+		echo "pcrpid 256" >> config.txt
+		echo "programfile program.txt" >> config.txt
+		echo "txqlen 8000" >> config.txt
+
+		#Create  program.txt  - Channel Name/EPG
+		echo -e "[PROGRAM]\n"$CALLSIGN > program.txt
+		echo -e "[PROVIDER]\nDigiLite,MK808" >> program.txt
+		echo -e "[EVENT_TITLE]\n"$TITLE >> program.txt
+		echo -e "[EVENT_TEXT]\n"$TEXT >> program.txt
+		echo -e "[EVENT_DURATION]\n60" >> program.txt
+
+		ps cax | grep dvbsenco8 > /dev/null
+		if [ $? -eq 0 ]; then
+  			killall dvbsenco8 > /dev/null 2>&1
+			killall hcapture > /dev/null 2>&1
+			killall pstots > /dev/null 2>&1
+			killall dvbsiadd > /dev/null 2>&1
+			killall dvbnullpadder > /dev/null 2>&1
+		fi
+
+		./hcapture | ./pstots | ./dvbsiadd | ./dvbnullpadder | ./dvbsenco8 > /dev/ttyUSB0 &
+
+		#return status once running
+		echo "Config ok" > /dev/ttyUSB1
+		sleep 1
+		
+		echo -e "Live mode, Waiting control command..."
+
+	fi
+	sleep 0.1
+done
+

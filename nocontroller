@@ -1,0 +1,86 @@
+#!/bin/bash
+cd binaries
+cp backup/listen_nocontroller listen
+
+echo -e "\nEnter Symbol rate e.g. 2000, (use 4166 for 4167):"
+read -e SR
+echo -e "\n"
+echo "Enter FEC e.g. 1/2:"
+read -e FEC
+echo -e "\n"
+echo "Enter Video PID, usually 256:"
+read -e VPID
+echo -e "\n"
+echo "Enter Audio PID, usually 257:"
+read -e APID
+echo -e "\n"
+echo "Enter PMT PID, usually 4095:"
+read -e PMTPID
+echo -e "\n"
+echo "Enter PVR Input method, 1 for Composite, 2 for S-Video:"
+read -e INPUT
+echo -e "\n"
+echo "Enter your callsign:"
+read -e CALLSIGN
+echo -e "\n"
+echo "Enter Program Title - Shown as epg program:"
+read -e TITLE
+echo -e "\n"
+echo "Enter Program Text - Shown as epg info:"
+read -e TEXT
+echo -e "\n"
+
+
+echo -e "Setings being used are:\n(if they are incorrect then re-run this program)\n"
+
+echo "Symbol rate:   "$SR
+echo "FEC:           "$FEC
+echo "Video PID:     "$VPID
+echo "Audio PID:     "$APID
+echo "PMT   PID:     "$PMTPID
+echo "PVR Input:     "$INPUT
+echo "Callsign:      "$CALLSIGN
+echo "Program title: "$TITLE
+echo "Program text:  "$TEXT
+
+
+echo -e "\nNow creating config files...\n"
+
+sleep 1
+
+echo "SR="$SR > settings
+echo "FEC="$FEC >> settings
+
+
+
+#Calculate Video bit rate value for current SR/FEC
+DSR=$(echo "scale=0;2*$SR" | bc) # 2 * Symbol Rate
+DECFEC=$(echo "scale=3;$FEC" | bc) # Turns FEC String to decimal
+RS=$(echo "scale=3;188 / 204" | bc) # Calculates Reed Solomon percentage
+TS=$(echo "scale=0;$DSR * $RS * $DECFEC" | bc) # Calculates Transport Stream rate for current SR/FEC
+TSMAUD=$(echo "scale=0;$TS - 192" | bc) # TS Rate minus Audio rate
+VIDRATE=$(echo "scale=0;$TSMAUD * 0.75" | bc) # TS - Audio rate * 0.85 gives rough available Video Bitrate
+
+
+#Create config.txt - Encoder/PID Settings
+echo "videobitrate" ${VIDRATE%.*}"000" > config.txt
+echo "videocapture /dev/video0" >> config.txt
+echo "captureport " $INPUT >> config.txt
+echo "videopid" $VPID >> config.txt
+echo "audiopid" $APID >> config.txt
+echo "pmtpid" $PMTPID >> config.txt
+echo "pcrpid 256" >> config.txt
+echo "programfile program.txt" >> config.txt
+echo "txqlen 8000" >> config.txt
+
+#Create  program.txt  - Channel Name/EPG
+echo -e "[PROGRAM]\n"$CALLSIGN > program.txt
+echo -e "[PROVIDER]\nDigiLite,MK808" >> program.txt
+echo -e "[EVENT_TITLE]\n"$TITLE >> program.txt
+echo -e "[EVENT_TEXT]\n"$TEXT >> program.txt
+echo -e "[EVENT_DURATION]\n60" >> program.txt
+
+sleep 1
+
+echo -e "Now configured for use without controller, you can now reboot.\n"
+
